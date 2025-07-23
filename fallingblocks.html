@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Falling Object Game</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: sans-serif; background: #111; color: #fff; overflow: hidden; }
+  #game {
+    position: relative;
+    width: 400px;
+    height: 600px;
+    margin: 20px auto;
+    background: #222;
+    border: 2px solid #555;
+    overflow: hidden;
+  }
+  .player {
+    width: 30px;
+    height: 30px;
+    background: yellow;
+    position: absolute;
+    left: 185px;
+    bottom: 20px;
+    border-radius: 50%;
+  }
+  .obstacle, .powerup {
+    position: absolute;
+    top: -20px;
+  }
+  .obstacle {
+    width: 40px;
+    height: 20px;
+    background: red;
+  }
+  .powerup.blue {
+    background: blue;
+    width: 40px;
+    height: 20px;
+    border-radius: 0;
+  }
+  .powerup.green {
+    background: green;
+    width: 40px;
+    height: 20px;
+    border-radius: 50%;
+  }
+  .powerup.purple {
+    width: 0;
+    height: 0;
+    border-left: 20px solid transparent;
+    border-right: 20px solid transparent;
+    border-bottom: 20px solid purple;
+    background: none;
+  }
+  #score {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 16px;
+  }
+  #ghostMeter {
+    position: absolute;
+    top: 40px;
+    left: 10px;
+    width: 100px;
+    height: 10px;
+    background: #444;
+    border: 1px solid #aaa;
+    display: none;
+  }
+  #ghostFill {
+    height: 100%;
+    background: purple;
+    width: 100%;
+  }
+  #gameover, #startScreen {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    display: none;
+  }
+  button {
+    margin-top: 10px;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 5px;
+    border: none;
+    background: #444;
+    color: white;
+    transition: background 0.3s;
+  }
+  button:hover:not(:disabled) {
+    background: #666;
+  }
+  button:disabled {
+    background: #222;
+    cursor: not-allowed;
+  }
+  #controls {
+    text-align: center;
+    margin-top: 10px;
+  }
+  #controls button {
+    margin: 0 5px;
+  }
+</style>
+</head>
+<body>
+<div id="game">
+  <div id="score">
+    <div id="blockScore">Score: 0 blocks</div>
+    <div id="distanceScore">Distance: 0 m</div>
+  </div>
+
+  <div id="ghostMeter"><div id="ghostFill"></div></div>
+  <div class="player" id="player"></div>
+
+  <div id="startScreen">
+    <button id="startBtn">Start</button>
+  </div>
+
+  <div id="gameover">
+    <div>Game Over!</div>
+    <button id="restartBtn">Restart</button>
+  </div>
+</div>
+
+<div id="controls" style="width:400px; margin: 0 auto; display:none;">
+  <button id="pauseBtn" disabled>Pause</button>
+  <button id="playBtn" disabled>Play</button>
+  <button id="exitBtn">Exit</button>
+</div>
+
+<script>
+(() => {
+  const game = document.getElementById("game");
+  const player = document.getElementById("player");
+  const blockScore = document.getElementById("blockScore");
+  const distanceScore = document.getElementById("distanceScore");
+  const ghostMeter = document.getElementById("ghostMeter");
+  const ghostFill = document.getElementById("ghostFill");
+  const gameoverEl = document.getElementById("gameover");
+  const startScreen = document.getElementById("startScreen");
+  const controls = document.getElementById("controls");
+
+  const startBtn = document.getElementById("startBtn");
+  const pauseBtn = document.getElementById("pauseBtn");
+  const playBtn = document.getElementById("playBtn");
+  const exitBtn = document.getElementById("exitBtn");
+  const restartBtn = document.getElementById("restartBtn");
+
+  const gameWidth = 400;
+  const playerWidth = 30;
+  let playerX = 185;
+
+  let gameTimer = null;
+  let obstacleTimer = null;
+  let powerupTimer = null;
+
+  let obstacles = [];
+  let powerups = [];
+
+  let blocksPassed = 0;
+  let distance = 0;
+  let speed = 2;
+  const baseSpeed = 2;
+
+  let shield = false;
+  let slowMode = false;
+  let ghostMode = false;
+
+  let ghostModeTimer = null;
+  let slowModeTimer = null;
+
+  let isPaused = false;
+  let isGameOver = false;
+
+  // Movement controls
+  document.addEventListener("keydown", e => {
+    if (isGameOver || isPaused) return;
+    if (e.key === "ArrowLeft" && playerX > 0) {
+      playerX -= 10;
+      if (playerX < 0) playerX = 0;
+      player.style.left = playerX + "px";
+    }
+    if (e.key === "ArrowRight" && playerX < gameWidth - playerWidth) {
+      playerX += 10;
+      if (playerX > gameWidth - playerWidth) playerX = gameWidth - playerWidth;
+      player.style.left = playerX + "px";
+    }
+  });
+
+  // Collision helper
+  function isColliding(a, b) {
+    const aRect = a.getBoundingClientRect();
+    const bRect = b.getBoundingClientRect();
+    return !(
+      aRect.top > bRect.bottom ||
+      aRect.bottom < bRect.top ||
+      aRect.right < bRect.left ||
+      aRect.left > bRect.right
+    );
+  }
+
+  // Create obstacle
+  function createObstacle() {
+    if (isGameOver || isPaused) return;
+    const obs = document.createElement("div");
+    obs.classList.add("obstacle");
+    obs.style.left = Math.random() * (gameWidth - 40) + "px";
+    obs.style.top = "-20px";
+    game.appendChild(obs);
+    obstacles.push({el: obs, top: -20, left: parseFloat(obs.style.left)});
+  }
+
+  // Create powerup
+  function createPowerup() {
+    if (isGameOver || isPaused) return;
+    const types = ["blue", "green", "purple"];
+    const type = types[Math.floor(Math.random() * types.length)];
+    const p = document.createElement("div");
+    p.classList.add("powerup", type);
+    p.style.left = Math.random() * (gameWidth - 40) + "px";
+    p.style.top = "-20px";
+    game.appendChild(p);
+    powerups.push({el: p, top: -20, left: parseFloat(p.style.left), type});
+  }
+
+  // Activate Slow Mode
+  function activateSlowMode() {
+    if (slowMode) return;
+    slowMode = true;
+    speed = baseSpeed / 2;
+    slowModeTimer = setTimeout(() => {
+      slowMode = false;
+      if (!ghostMode) speed = baseSpeed;
+    }, 5000);
+  }
+
+  // Activate Ghost Mode
+  function activateGhostMode() {
+    if (ghostMode) return;
+    ghostMode = true;
+    speed = baseSpeed * 10;
+    player.style.opacity = "0.5";
+    ghostMeter.style.display = "block";
+    let startTime = Date.now();
+
+    ghostModeTimer = setInterval(() => {
+      if (isPaused || isGameOver) return;
+      const elapsed = Date.now() - startTime;
+      const duration = 3000;
+      if (elapsed >= duration) {
+        clearInterval(ghostModeTimer);
+        ghostMode = false;
+        speed = slowMode ? baseSpeed / 2 : baseSpeed;
+        player.style.opacity = "1";
+        ghostMeter.style.display = "none";
+      } else {
+        ghostFill.style.width = `${100 - (elapsed / duration) * 100}%`;
+      }
+    }, 50);
+  }
+
+  // Update all objects positions and check collisions
+  function updateGame() {
+    if (isPaused || isGameOver) return;
+
+    // Move obstacles down
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+      const o = obstacles[i];
+      o.top += speed;
+      if (o.top > 600) {
+        // Remove offscreen obstacle
+        game.removeChild(o.el);
+        obstacles.splice(i, 1);
+        blocksPassed++;
+        blockScore.innerText = `Score: ${blocksPassed} blocks`;
+      } else {
+        o.el.style.top = o.top + "px";
+
+        if (!ghostMode && isColliding(player, o.el)) {
+          if (shield) {
+            shield = false;
+            o.el.remove();
+            obstacles.splice(i, 1);
+          } else {
+            endGame();
+            return;
+          }
+        }
+      }
+    }
+
+    // Move powerups down
+    for (let i = powerups.length - 1; i >= 0; i--) {
+      const p = powerups[i];
+      p.top += speed;
+      if (p.top > 600) {
+        p.el.remove();
+        powerups.splice(i, 1);
+      } else {
+        p.el.style.top = p.top + "px";
+
+        if (isColliding(player, p.el)) {
+          // Apply powerup
+          if (p.type === "green") shield = true;
+          else if (p.type === "blue") activateSlowMode();
+          else if (p.type === "purple") activateGhostMode();
+
+          p.el.remove();
+          powerups.splice(i, 1);
+        }
+      }
+    }
+
+    // Update distance
+    distance += 0.1;
+    distanceScore.innerText = `Distance: ${Math.floor(distance)} m`;
+
+    // Increase speed every 10m
+    if (!slowMode && !ghostMode && Math.floor(distance) % 10 === 0 && Math.floor(distance) !== 0) {
+      speed = baseSpeed + Math.floor(distance) / 20;
+    }
+  }
+
+  function startGame() {
+    isGameOver = false;
+    isPaused = false;
+    playerX = 185;
+    player.style.left = playerX + "px";
+    blocksPassed = 0;
+    distance = 0;
+    speed = baseSpeed;
+    shield = false;
+    slowMode = false;
+    ghostMode = false;
+    player.style.opacity = "1";
+    ghostMeter.style.display = "none";
+    blockScore.innerText = `Score: 0 blocks`;
+    distanceScore.innerText = `Distance: 0 m`;
+    gameoverEl.style.display = "none";
+    controls.style.display = "block";
+    pauseBtn.disabled = false;
+    playBtn.disabled = true;
+
+    // Remove existing obstacles and powerups
+    obstacles.forEach(o => o.el.remove());
+    powerups.forEach(p => p.el.remove());
+    obstacles = [];
+    powerups = [];
+
+    if (ghostModeTimer) {
+      clearInterval(ghostModeTimer);
+      ghostModeTimer = null;
+    }
+    if (slowModeTimer) {
+      clearTimeout(slowModeTimer);
+      slowModeTimer = null;
+    }
+
+    // Start intervals
+    if (gameTimer) clearInterval(gameTimer);
+    if (obstacleTimer) clearInterval(obstacleTimer);
+    if (powerupTimer) clearInterval(powerupTimer);
+
+    gameTimer = setInterval(updateGame, 16);
+
+    obstacleTimer = setInterval(() => {
+      if (!isPaused && !isGameOver) createObstacle();
+    }, 1200);
+
+    powerupTimer = setInterval(() => {
+      if (!isPaused && !isGameOver) createPowerup();
+    }, 8000);
+  }
+
+  function pauseGame() {
+    if (isGameOver) return;
+    isPaused = true;
+    pauseBtn.disabled = true;
+    playBtn.disabled = false;
+  }
+
+  function resumeGame() {
+    if (isGameOver) return;
+    isPaused = false;
+    pauseBtn.disabled = false;
+    playBtn.disabled = true;
+  }
+
+  function endGame() {
+    isGameOver = true;
+    pauseBtn.disabled = true;
+    playBtn.disabled = true;
+    controls.style.display = "none";
+    gameoverEl.style.display = "block";
+  }
+
+  // Event listeners
+  startBtn.onclick = () => {
+    startScreen.style.display = "none";
+    controls.style.display = "block";
+    startGame();
+  };
+
+  restartBtn.onclick = () => {
+    gameoverEl.style.display = "none";
+    controls.style.display = "block";
+    startGame();
+  };
+
+  pauseBtn.onclick = pauseGame;
+  playBtn.onclick = resumeGame;
+
+  exitBtn.onclick = () => {
+    window.location.href = "index.html";
+  };
+
+  // Initialize screen state
+  startScreen.style.display = "block";
+  controls.style.display = "none";
+  gameoverEl.style.display = "none";
+  pauseBtn.disabled = true;
+  playBtn.disabled = true;
+})();
+</script>
+</body>
+</html>
