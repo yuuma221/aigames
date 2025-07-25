@@ -169,6 +169,8 @@
   let speed = 2;
   const baseSpeed = 2;
 
+  let currentObstacleRate = 1200;
+
   let shield = false;
   let slowMode = false;
   let ghostMode = false;
@@ -179,7 +181,6 @@
   let isPaused = false;
   let isGameOver = false;
 
-  // Movement controls
   document.addEventListener("keydown", e => {
     if (isGameOver || isPaused) return;
     if (e.key === "ArrowLeft" && playerX > 0) {
@@ -194,7 +195,6 @@
     }
   });
 
-  // Collision helper
   function isColliding(a, b) {
     const aRect = a.getBoundingClientRect();
     const bRect = b.getBoundingClientRect();
@@ -206,18 +206,29 @@
     );
   }
 
-  // Create obstacle
   function createObstacle() {
     if (isGameOver || isPaused) return;
     const obs = document.createElement("div");
     obs.classList.add("obstacle");
     obs.style.left = Math.random() * (gameWidth - 40) + "px";
     obs.style.top = "-20px";
+
+    const isMoving = distance >= 50;
+    if (isMoving) {
+      obs.dataset.moving = "true";
+      obs.dataset.direction = Math.random() < 0.5 ? "left" : "right";
+    }
+
     game.appendChild(obs);
-    obstacles.push({el: obs, top: -20, left: parseFloat(obs.style.left)});
+    obstacles.push({
+      el: obs,
+      top: -20,
+      left: parseFloat(obs.style.left),
+      isMoving,
+      direction: obs.dataset.direction
+    });
   }
 
-  // Create powerup
   function createPowerup() {
     if (isGameOver || isPaused) return;
     const types = ["blue", "green", "purple"];
@@ -230,7 +241,6 @@
     powerups.push({el: p, top: -20, left: parseFloat(p.style.left), type});
   }
 
-  // Activate Slow Mode
   function activateSlowMode() {
     if (slowMode) return;
     slowMode = true;
@@ -241,7 +251,6 @@
     }, 5000);
   }
 
-  // Activate Ghost Mode
   function activateGhostMode() {
     if (ghostMode) return;
     ghostMode = true;
@@ -266,23 +275,32 @@
     }, 50);
   }
 
-  // Update all objects positions and check collisions
   function updateGame() {
     if (isPaused || isGameOver) return;
 
-    // Move obstacles down
     for (let i = obstacles.length - 1; i >= 0; i--) {
       const o = obstacles[i];
       o.top += speed;
+      o.el.style.top = o.top + "px";
+
+      if (o.isMoving) {
+        const moveSpeed = 1.5;
+        if (o.direction === "left") {
+          o.left -= moveSpeed;
+          if (o.left <= 0) o.direction = "right";
+        } else {
+          o.left += moveSpeed;
+          if (o.left >= gameWidth - 40) o.direction = "left";
+        }
+        o.el.style.left = o.left + "px";
+      }
+
       if (o.top > 600) {
-        // Remove offscreen obstacle
         game.removeChild(o.el);
         obstacles.splice(i, 1);
         blocksPassed++;
         blockScore.innerText = `Score: ${blocksPassed} blocks`;
       } else {
-        o.el.style.top = o.top + "px";
-
         if (!ghostMode && isColliding(player, o.el)) {
           if (shield) {
             shield = false;
@@ -296,35 +314,38 @@
       }
     }
 
-    // Move powerups down
     for (let i = powerups.length - 1; i >= 0; i--) {
       const p = powerups[i];
       p.top += speed;
+      p.el.style.top = p.top + "px";
       if (p.top > 600) {
         p.el.remove();
         powerups.splice(i, 1);
-      } else {
-        p.el.style.top = p.top + "px";
-
-        if (isColliding(player, p.el)) {
-          // Apply powerup
-          if (p.type === "green") shield = true;
-          else if (p.type === "blue") activateSlowMode();
-          else if (p.type === "purple") activateGhostMode();
-
-          p.el.remove();
-          powerups.splice(i, 1);
-        }
+      } else if (isColliding(player, p.el)) {
+        if (p.type === "green") shield = true;
+        else if (p.type === "blue") activateSlowMode();
+        else if (p.type === "purple") activateGhostMode();
+        p.el.remove();
+        powerups.splice(i, 1);
       }
     }
 
-    // Update distance
     distance += 0.1;
     distanceScore.innerText = `Distance: ${Math.floor(distance)} m`;
 
-    // Increase speed every 10m
     if (!slowMode && !ghostMode && Math.floor(distance) % 10 === 0 && Math.floor(distance) !== 0) {
       speed = baseSpeed + Math.floor(distance) / 20;
+    }
+
+    if (Math.floor(distance) % 100 === 0 && Math.floor(distance) !== 0) {
+      const newRate = Math.max(400, 1200 - Math.floor(distance / 10) * 10);
+      if (newRate !== currentObstacleRate) {
+        currentObstacleRate = newRate;
+        clearInterval(obstacleTimer);
+        obstacleTimer = setInterval(() => {
+          if (!isPaused && !isGameOver) createObstacle();
+        }, currentObstacleRate);
+      }
     }
   }
 
@@ -336,6 +357,7 @@
     blocksPassed = 0;
     distance = 0;
     speed = baseSpeed;
+    currentObstacleRate = 1200;
     shield = false;
     slowMode = false;
     ghostMode = false;
@@ -348,22 +370,14 @@
     pauseBtn.disabled = false;
     playBtn.disabled = true;
 
-    // Remove existing obstacles and powerups
     obstacles.forEach(o => o.el.remove());
     powerups.forEach(p => p.el.remove());
     obstacles = [];
     powerups = [];
 
-    if (ghostModeTimer) {
-      clearInterval(ghostModeTimer);
-      ghostModeTimer = null;
-    }
-    if (slowModeTimer) {
-      clearTimeout(slowModeTimer);
-      slowModeTimer = null;
-    }
+    if (ghostModeTimer) clearInterval(ghostModeTimer);
+    if (slowModeTimer) clearTimeout(slowModeTimer);
 
-    // Start intervals
     if (gameTimer) clearInterval(gameTimer);
     if (obstacleTimer) clearInterval(obstacleTimer);
     if (powerupTimer) clearInterval(powerupTimer);
@@ -372,7 +386,7 @@
 
     obstacleTimer = setInterval(() => {
       if (!isPaused && !isGameOver) createObstacle();
-    }, 1200);
+    }, currentObstacleRate);
 
     powerupTimer = setInterval(() => {
       if (!isPaused && !isGameOver) createPowerup();
@@ -401,7 +415,6 @@
     gameoverEl.style.display = "block";
   }
 
-  // Event listeners
   startBtn.onclick = () => {
     startScreen.style.display = "none";
     controls.style.display = "block";
@@ -421,7 +434,6 @@
     window.location.href = "index.html";
   };
 
-  // Initialize screen state
   startScreen.style.display = "block";
   controls.style.display = "none";
   gameoverEl.style.display = "none";
