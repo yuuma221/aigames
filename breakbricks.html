@@ -120,7 +120,7 @@
     }
 
     function exitGame() {
-      location.href = "index.html"; // Reload page to "exit"
+      location.href = "index.html";
     }
 
     function restartGame() {
@@ -220,8 +220,8 @@
       powerUps.forEach(p => {
         ctx.beginPath();
         ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-        ctx.fillStyle = p.type === "multiball" ? "#70e000" : 
-                        p.type === "paddle" ? "#ff3b3b" : 
+        ctx.fillStyle = p.type === "multiball" ? "#70e000" :
+                        p.type === "paddle" ? "#ff3b3b" :
                         p.type === "speed" ? "#3b8cff" : "#fff";
         ctx.fill();
         ctx.closePath();
@@ -257,10 +257,18 @@
       } else if (type === "paddle") {
         paddleWidth = Math.min(paddleWidth + 20, maxPaddleWidth);
       } else if (type === "speed") {
+        // Slow the balls for 3 seconds
         balls.forEach(ball => {
-          ball.dx *= 1.2;
-          ball.dy *= 1.2;
+          ball.dx /= 1.5;
+          ball.dy /= 1.5;
         });
+
+        setTimeout(() => {
+          balls.forEach(ball => {
+            ball.dx *= 1.5;
+            ball.dy *= 1.5;
+          });
+        }, 3000);
       }
     }
 
@@ -278,10 +286,8 @@
               b.hits -= 1;
               ball.dy = -ball.dy;
 
-              // Score: add 10 if brick destroyed, else 5
               score += b.hits === 0 ? 10 : 5;
 
-              // Power-up drop chance 20%
               if (Math.random() < 0.2) {
                 const rand = Math.random();
                 let type = "multiball";
@@ -307,11 +313,9 @@
         ball.x += ball.dx;
         ball.y += ball.dy;
 
-        // Wall bounce
         if (ball.x < 8 || ball.x > canvas.width - 8) ball.dx = -ball.dx;
         if (ball.y < 8) ball.dy = -ball.dy;
 
-        // Paddle bounce
         if (
           ball.y > canvas.height - 8 - paddleHeight &&
           ball.x > paddleX &&
@@ -320,7 +324,6 @@
           ball.dy = -ball.dy;
         }
 
-        // Missed ball
         if (ball.y > canvas.height) {
           balls.splice(index, 1);
           if (balls.length === 0) {
